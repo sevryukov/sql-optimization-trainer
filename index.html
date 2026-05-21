@@ -170,7 +170,14 @@
         }
 
         .schema-panel.collapsed {
-            display: none;
+            width: 0;
+            padding: 0;
+            border: none;
+            overflow: hidden;
+        }
+        
+        .main-content.with-collapsed-schema {
+            grid-template-columns: 0 1fr 380px !important;
         }
 
         .panel-header {
@@ -477,6 +484,10 @@
         .plan-node-detail {
             color: var(--text-secondary);
             font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: calc(100% - 120px);
         }
 
         .plan-node-cost {
@@ -807,7 +818,7 @@
                     'Проверьте, есть ли индекс на поле order_date в таблице orders',
                     'Создайте индекс: CREATE INDEX idx_orders_date ON orders(order_date);'
                 ],
-                successThreshold: { costReduction: 10, rowsReduction: 100 },
+                successThreshold: { costReduction: 5, rowsReduction: 100 },
                 baselineCost: null,
                 currentCost: null
             },
@@ -822,7 +833,7 @@
                     'В таблице customers более 50,000 записей',
                     'Создайте индекс на поле customer_name'
                 ],
-                successThreshold: { costReduction: 50, rowsReduction: 1000 },
+                successThreshold: { costReduction: 5, rowsReduction: 1000 },
                 baselineCost: null,
                 currentCost: null
             },
@@ -837,7 +848,7 @@
                     'Проверьте индексы на полях customer_id в orders и order_id в order_items',
                     'Оптимально создать индекс на orders(customer_id)'
                 ],
-                successThreshold: { costReduction: 20, rowsReduction: 500 },
+                successThreshold: { costReduction: 5, rowsReduction: 500 },
                 baselineCost: null,
                 currentCost: null
             },
@@ -852,7 +863,7 @@
                     'Отдельные индексы не так эффективны как составной',
                     'Создайте составной индекс: CREATE INDEX idx_orders_status_date ON orders(status, order_date);'
                 ],
-                successThreshold: { costReduction: 15, rowsReduction: 200 },
+                successThreshold: { costReduction: 5, rowsReduction: 200 },
                 baselineCost: null,
                 currentCost: null
             }
@@ -1185,7 +1196,9 @@
             if (detail.includes('USING INDEX')) return 'USING INDEX';
             if (detail.includes('TEMP B-TREE')) return 'TEMP B-TREE';
             if (detail.includes('SORT')) return 'SORT';
-            return detail.split(' ')[0];
+            // Extract first two words for compound operations
+            const words = detail.split(' ');
+            return words.slice(0, Math.min(3, words.length)).join(' ');
         }
 
         // Update metrics display
@@ -1219,14 +1232,14 @@
             
             container.innerHTML = nodes.map((node, index) => {
                 const severity = node.cost < 100 ? 'good' : node.cost < 500 ? 'warning' : 'bad';
-                const indent = node.level * 20;
+                const indent = node.level * 24;
                 
                 return `
                     <div class="plan-node ${severity}" style="margin-left: ${indent}px;" 
-                         title="${node.detail}\nОценочное число строк: ${node.rows}\n${getOptimizationTip(node.detail)}">
+                         title="Детали: ${escapeHtml(node.detail)}\nОценочное число строк: ${node.rows}\n${getOptimizationTip(node.detail)}">
                         <div class="plan-node-operation">${node.operation}</div>
-                        <div class="plan-node-detail">${truncateString(node.detail, 80)}</div>
-                        <div class="plan-node-cost">cost: ${node.cost}</div>
+                        <div class="plan-node-detail" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">${escapeHtml(node.detail)}</div>
+                        <div class="plan-node-cost">cost: ${node.cost} | rows: ~${node.rows}</div>
                     </div>
                     ${index < nodes.length - 1 && nodes[index + 1].level > node.level ? '<div class="plan-connector"></div>' : ''}
                 `;
@@ -1464,7 +1477,9 @@
 
         function toggleSchema() {
             const panel = document.querySelector('.schema-panel');
+            const mainContent = document.querySelector('.main-content');
             panel.classList.toggle('collapsed');
+            mainContent.classList.toggle('with-collapsed-schema');
         }
 
         // Keyboard shortcuts
