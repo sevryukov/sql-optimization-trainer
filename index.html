@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Optimizer Trainer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --text-primary: #eaeaea;
+            --text-secondary: #a0a0a0;
+            --accent-green: #4ade80;
+            --accent-red: #f87171;
+            --accent-orange: #fb923c;
+            --accent-blue: #60a5fa;
+            --border-color: #2d3748;
+            --success-bg: rgba(74, 222, 128, 0.1);
+            --error-bg: rgba(248, 113, 113, 0.1);
+        }
+
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            height: 100vh;
+        }
+
+        /* Top Panel */
+        .top-panel {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .scenario-cards {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .scenario-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 13px;
+        }
+
+        .scenario-card:hover {
+            background: var(--bg-primary);
+            border-color: var(--accent-blue);
+        }
+
+        .scenario-card.active {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+            border-color: var(--accent-blue);
+        }
+
+        .scenario-card.completed {
+            border-color: var(--accent-green);
+        }
+
+        .scenario-card.completed::after {
+            content: ' ✓';
+            color: var(--accent-green);
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        .btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .btn:hover {
+            background: var(--bg-primary);
+            border-color: var(--accent-blue);
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+            border-color: var(--accent-blue);
+        }
+
+        .btn-primary:hover {
+            background: #3b82f6;
+        }
+
+        .btn-success {
+            background: var(--accent-green);
+            color: var(--bg-primary);
+            border-color: var(--accent-green);
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+        }
+
+        .status-dot.success {
+            background: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .status-dot.error {
+            background: var(--accent-red);
+        }
+
+        /* Main Content */
+        .main-content {
+            display: grid;
+            grid-template-columns: 280px 1fr 380px;
+            overflow: hidden;
+        }
+
+        /* Left Panel - Schema Explorer */
+        .schema-panel {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .panel-header {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .schema-tree {
+            font-size: 13px;
+        }
+
+        .schema-item {
+            padding: 6px 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-bottom: 2px;
+        }
+
+        .schema-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .table-name {
+            color: var(--accent-blue);
+            font-weight: bold;
+        }
+
+        .column-list {
+            margin-left: 20px;
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .column-item {
+            padding: 3px 0;
+        }
+
+        .column-type {
+            color: var(--accent-orange);
+        }
+
+        .pk-badge {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-size: 10px;
+            margin-left: 6px;
+        }
+
+        .fk-badge {
+            background: var(--accent-orange);
+            color: var(--bg-primary);
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-size: 10px;
+            margin-left: 4px;
+        }
+
+        .index-list {
+            margin-left: 20px;
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--accent-green);
+        }
+
+        .index-item {
+            padding: 3px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .index-icon {
+            color: var(--accent-green);
+        }
+
+        .row-count {
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin-left: 8px;
+        }
+
+        /* Center Panel - Editor & Results */
+        .editor-panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .editor-toolbar {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 16px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .history-select {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 12px;
+            min-width: 200px;
+        }
+
+        .sql-editor-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sql-editor {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: none;
+            padding: 16px;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: none;
+            outline: none;
+        }
+
+        .results-container {
+            height: 40%;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tabs {
+            display: flex;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-right: 1px solid var(--border-color);
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+
+        .tab:hover {
+            background: var(--bg-secondary);
+        }
+
+        .tab.active {
+            background: var(--bg-secondary);
+            color: var(--accent-blue);
+        }
+
+        .tab-content {
+            flex: 1;
+            overflow: auto;
+            padding: 12px;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .results-table th,
+        .results-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .results-table th {
+            background: var(--bg-tertiary);
+            color: var(--accent-blue);
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+
+        .results-table tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .message-log {
+            font-size: 13px;
+            line-height: 1.8;
+        }
+
+        .message-success {
+            color: var(--accent-green);
+        }
+
+        .message-error {
+            color: var(--accent-red);
+        }
+
+        .message-info {
+            color: var(--text-secondary);
+        }
+
+        /* Right Panel - Performance Analysis */
+        .performance-panel {
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            padding: 16px;
+        }
+
+        .metric-card {
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .metric-value {
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .metric-value.good {
+            color: var(--accent-green);
+        }
+
+        .metric-value.warning {
+            color: var(--accent-orange);
+        }
+
+        .metric-value.bad {
+            color: var(--accent-red);
+        }
+
+        .plan-tree-container {
+            padding: 16px;
+            flex: 1;
+            overflow: auto;
+        }
+
+        .plan-tree {
+            font-size: 12px;
+        }
+
+        .plan-node {
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            border-left: 4px solid var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .plan-node:hover {
+            background: var(--bg-primary);
+        }
+
+        .plan-node.good {
+            border-left-color: var(--accent-green);
+        }
+
+        .plan-node.warning {
+            border-left-color: var(--accent-orange);
+        }
+
+        .plan-node.bad {
+            border-left-color: var(--accent-red);
+        }
+
+        .plan-node-operation {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .plan-node-detail {
+            color: var(--text-secondary);
+            font-size: 11px;
+        }
+
+        .plan-node-cost {
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .plan-connector {
+            width: 2px;
+            height: 20px;
+            background: var(--border-color);
+            margin-left: 20px;
+        }
+
+        .heat-map {
+            padding: 16px;
+        }
+
+        .heat-bar {
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(to right, var(--accent-green), var(--accent-orange), var(--accent-red));
+            margin-top: 8px;
+            position: relative;
+        }
+
+        .heat-marker {
+            position: absolute;
+            top: -3px;
+            width: 14px;
+            height: 14px;
+            background: var(--text-primary);
+            border: 2px solid var(--bg-primary);
+            border-radius: 50%;
+            transform: translateX(-50%);
+        }
+
+        .heat-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 16px;
+            color: var(--accent-blue);
+        }
+
+        .modal-content {
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        .modal-close {
+            margin-top: 20px;
+            float: right;
+        }
+
+        .hint-step {
+            background: var(--bg-tertiary);
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            border-left: 3px solid var(--accent-orange);
+        }
+
+        .comparison-view {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .comparison-item {
+            background: var(--bg-tertiary);
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .comparison-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-primary);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--border-color);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Syntax highlighting placeholder */
+        .keyword { color: var(--accent-blue); }
+        .string { color: var(--accent-green); }
+        .number { color: var(--accent-orange); }
+        .comment { color: var(--text-secondary); font-style: italic; }
+
+        /* Toast notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1500;
+        }
+
+        .toast {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px 20px;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--accent-green);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--accent-red);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Top Panel -->
+        <div class="top-panel">
+            <div class="scenario-cards" id="scenarioCards"></div>
+            <div class="toolbar">
+                <button class="btn" onclick="resetDatabase()">🔄 Сбросить БД</button>
+                <button class="btn" onclick="showHint()">💡 Подсказка</button>
+                <button class="btn btn-primary" onclick="checkSolution()">✓ Проверить решение</button>
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Готов</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Schema Panel -->
+            <div class="schema-panel">
+                <div class="panel-header">
+                    <span>📊 Схема БД</span>
+                    <button class="btn" style="padding: 4px 8px; font-size: 11px;" onclick="toggleSchema()">⚡</button>
+                </div>
+                <div class="schema-tree" id="schemaTree"></div>
+            </div>
+
+            <!-- Editor Panel -->
+            <div class="editor-panel">
+                <div class="editor-toolbar">
+                    <button class="btn btn-primary" onclick="executeQuery()">▶ Выполнить (Ctrl+Enter)</button>
+                    <select class="history-select" id="historySelect" onchange="loadFromHistory()">
+                        <option value="">История запросов...</option>
+                    </select>
+                </div>
+                <div class="sql-editor-container">
+                    <textarea class="sql-editor" id="sqlEditor" placeholder="Введите SQL-запрос..."></textarea>
+                </div>
+                <div class="results-container">
+                    <div class="tabs">
+                        <div class="tab active" onclick="switchTab('results')">Результат</div>
+                        <div class="tab" onclick="switchTab('messages')">Сообщения</div>
+                    </div>
+                    <div class="tab-content" id="resultsTab"></div>
+                    <div class="tab-content" id="messagesTab" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Performance Panel -->
+            <div class="performance-panel">
+                <div class="panel-header" style="padding: 16px 16px 0;">
+                    <span>📈 Анализ производительности</span>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Стоимость (cost)</div>
+                        <div class="metric-value" id="metricCost">-</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Прочитано строк</div>
+                        <div class="metric-value" id="metricRows">-</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Виртуальное время</div>
+                        <div class="metric-value" id="metricTime">-</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Индексы</div>
+                        <div class="metric-value" id="metricIndexes">-</div>
+                    </div>
+                </div>
+                <div class="plan-tree-container" id="planTree"></div>
+                <div class="heat-map">
+                    <div class="metric-label">Тепловая карта производительности</div>
+                    <div class="heat-bar">
+                        <div class="heat-marker" id="heatMarker" style="left: 50%;"></div>
+                    </div>
+                    <div class="heat-labels">
+                        <span>Отлично</span>
+                        <span>Средне</span>
+                        <span>Критично</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hint Modal -->
+    <div class="modal-overlay" id="hintModal">
+        <div class="modal">
+            <div class="modal-title">💡 Подсказка</div>
+            <div class="modal-content" id="hintContent"></div>
+            <button class="btn modal-close" onclick="closeModal('hintModal')">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- Comparison Modal -->
+    <div class="modal-overlay" id="comparisonModal">
+        <div class="modal">
+            <div class="modal-title">📊 Сравнение планов выполнения</div>
+            <div class="modal-content">
+                <div class="comparison-view" id="comparisonView"></div>
+            </div>
+            <button class="btn modal-close" onclick="closeModal('comparisonModal')">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // Global state
+        let db = null;
+        let currentScenario = null;
+        let queryHistory = [];
+        let originalPlan = null;
+        let schemas = {};
+
+        // Scenarios configuration
+        const scenarios = [
+            {
+                id: 1,
+                name: 'Медленный поиск заказов',
+                description: 'Найти все заказы за определённый месяц',
+                initialQuery: "SELECT * FROM orders WHERE order_date BETWEEN '2025-01-01' AND '2025-01-31';",
+                expectedOptimization: 'CREATE INDEX idx_orders_date ON orders(order_date);',
+                hints: [
+                    'Обратите внимание на условие WHERE по полю order_date',
+                    'Проверьте, есть ли индекс на поле order_date в таблице orders',
+                    'Создайте индекс: CREATE INDEX idx_orders_date ON orders(order_date);'
+                ],
+                successThreshold: { costReduction: 10, rowsReduction: 100 }
+            },
+            {
+                id: 2,
+                name: 'Избыточное сканирование таблицы',
+                description: 'Найти клиента по имени',
+                initialQuery: "SELECT * FROM customers WHERE customer_name = 'John Smith';",
+                expectedOptimization: 'CREATE INDEX idx_customer_name ON customers(customer_name);',
+                hints: [
+                    'Поиск по имени клиента требует полного сканирования таблицы',
+                    'В таблице customers более 50,000 записей',
+                    'Создайте индекс на поле customer_name'
+                ],
+                successThreshold: { costReduction: 50, rowsReduction: 1000 }
+            },
+            {
+                id: 3,
+                name: 'Отсутствующий индекс по внешнему ключу',
+                description: 'Найти все товары в заказах клиента',
+                initialQuery: "SELECT oi.* FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE o.customer_id = 1;",
+                expectedOptimization: 'CREATE INDEX idx_orders_customer_id ON orders(customer_id);',
+                hints: [
+                    'JOIN выполняется по order_id, но фильтрация по customer_id',
+                    'Проверьте индексы на полях customer_id в orders и order_id в order_items',
+                    'Оптимально создать индекс на orders(customer_id)'
+                ],
+                successThreshold: { costReduction: 20, rowsReduction: 500 }
+            },
+            {
+                id: 4,
+                name: 'Неработающий составной индекс',
+                description: 'Поиск заказов по статусу и дате',
+                initialQuery: "SELECT * FROM orders WHERE status = 'completed' AND order_date > '2025-01-01';",
+                expectedOptimization: 'CREATE INDEX idx_orders_status_date ON orders(status, order_date);',
+                hints: [
+                    'Запрос фильтрует по двум полям: status и order_date',
+                    'Отдельные индексы не так эффективны как составной',
+                    'Создайте составной индекс: CREATE INDEX idx_orders_status_date ON orders(status, order_date);'
+                ],
+                successThreshold: { costReduction: 15, rowsReduction: 200 }
+            }
+        ];
+
+        // Initialize application
+        async function init() {
+            try {
+                const SQL = await initSqlJs({
+                    locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+                });
+                
+                db = new SQL.Database();
+                initializeDatabase();
+                loadScenario(0);
+                document.getElementById('loadingOverlay').style.display = 'none';
+                showToast('База данных загружена', 'success');
+            } catch (error) {
+                console.error('Failed to initialize:', error);
+                document.getElementById('loadingOverlay').innerHTML = 
+                    `<div style="color: var(--accent-red);">Ошибка загрузки: ${error.message}</div>`;
+            }
+        }
+
+        // Initialize database with sample data
+        function initializeDatabase() {
+            // Create tables
+            db.run(`
+                CREATE TABLE customers (
+                    id INTEGER PRIMARY KEY,
+                    customer_name TEXT NOT NULL,
+                    email TEXT,
+                    phone TEXT,
+                    city TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            db.run(`
+                CREATE TABLE products (
+                    id INTEGER PRIMARY KEY,
+                    product_name TEXT NOT NULL,
+                    category TEXT,
+                    price DECIMAL(10,2),
+                    stock_quantity INTEGER DEFAULT 0
+                )
+            `);
+
+            db.run(`
+                CREATE TABLE orders (
+                    id INTEGER PRIMARY KEY,
+                    customer_id INTEGER,
+                    order_date DATE,
+                    status TEXT DEFAULT 'pending',
+                    total_amount DECIMAL(10,2),
+                    shipping_address TEXT,
+                    FOREIGN KEY (customer_id) REFERENCES customers(id)
+                )
+            `);
+
+            db.run(`
+                CREATE TABLE order_items (
+                    id INTEGER PRIMARY KEY,
+                    order_id INTEGER,
+                    product_id INTEGER,
+                    quantity INTEGER,
+                    unit_price DECIMAL(10,2),
+                    FOREIGN KEY (order_id) REFERENCES orders(id),
+                    FOREIGN KEY (product_id) REFERENCES products(id)
+                )
+            `);
+
+            // Generate sample data
+            generateSampleData();
+            
+            // Store original schema
+            saveOriginalSchema();
+        }
+
+        // Generate realistic sample data
+        function generateSampleData() {
+            // Insert customers
+            const cities = ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань'];
+            for (let i = 1; i <= 50000; i++) {
+                const name = `Customer ${i}`;
+                const email = `customer${i}@example.com`;
+                const phone = `+7-${Math.floor(Math.random() * 900 + 100)}-${Math.floor(Math.random() * 900 + 100)}-${Math.floor(Math.random() * 9000 + 1000)}`;
+                const city = cities[Math.floor(Math.random() * cities.length)];
+                db.run("INSERT INTO customers (customer_name, email, phone, city) VALUES (?, ?, ?, ?)", 
+                    [name, email, phone, city]);
+            }
+
+            // Insert products
+            const categories = ['Электроника', 'Одежда', 'Книги', 'Дом и сад', 'Спорт'];
+            for (let i = 1; i <= 1000; i++) {
+                const name = `Product ${i}`;
+                const category = categories[Math.floor(Math.random() * categories.length)];
+                const price = (Math.random() * 10000 + 100).toFixed(2);
+                const stock = Math.floor(Math.random() * 1000);
+                db.run("INSERT INTO products (product_name, category, price, stock_quantity) VALUES (?, ?, ?, ?)",
+                    [name, category, price, stock]);
+            }
+
+            // Insert orders
+            const statuses = ['pending', 'processing', 'completed', 'cancelled'];
+            for (let i = 1; i <= 500000; i++) {
+                const customerId = Math.floor(Math.random() * 50000) + 1;
+                const year = 2024 + Math.floor(Math.random() * 2);
+                const month = Math.floor(Math.random() * 12) + 1;
+                const day = Math.floor(Math.random() * 28) + 1;
+                const orderDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const status = statuses[Math.floor(Math.random() * statuses.length)];
+                const total = (Math.random() * 50000 + 500).toFixed(2);
+                db.run("INSERT INTO orders (customer_id, order_date, status, total_amount) VALUES (?, ?, ?, ?)",
+                    [customerId, orderDate, status, total]);
+            }
+
+            // Insert order items
+            for (let i = 1; i <= 1500000; i++) {
+                const orderId = Math.floor(Math.random() * 500000) + 1;
+                const productId = Math.floor(Math.random() * 1000) + 1;
+                const quantity = Math.floor(Math.random() * 10) + 1;
+                const price = (Math.random() * 10000 + 100).toFixed(2);
+                if (i % 1000 === 0) db.exec("BEGIN");
+                db.run("INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)",
+                    [orderId, productId, quantity, price]);
+                if (i % 1000 === 0) db.exec("COMMIT");
+            }
+        }
+
+        // Save original schema for reset
+        function saveOriginalSchema() {
+            const result = db.exec("SELECT sql FROM sqlite_master WHERE type='table' OR type='index'");
+            schemas.original = result[0]?.values.map(row => row[0]).filter(sql => sql) || [];
+        }
+
+        // Reset database to original state
+        function resetDatabase() {
+            if (!confirm('Сбросить базу данных к исходному состоянию? Все созданные индексы будут удалены.')) return;
+            
+            // Drop all indexes
+            const indexes = db.exec("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'");
+            if (indexes[0]) {
+                indexes[0].values.forEach(row => {
+                    db.run(`DROP INDEX IF EXISTS ${row[0]}`);
+                });
+            }
+            
+            updateSchemaTree();
+            loadScenario(currentScenario?.id - 1 || 0);
+            showToast('База данных сброшена', 'success');
+        }
+
+        // Load scenario
+        function loadScenario(index) {
+            if (index < 0 || index >= scenarios.length) return;
+            
+            currentScenario = scenarios[index];
+            document.getElementById('sqlEditor').value = currentScenario.initialQuery;
+            
+            // Update scenario cards
+            const cardsContainer = document.getElementById('scenarioCards');
+            cardsContainer.innerHTML = scenarios.map((s, i) => `
+                <div class="scenario-card ${i === index ? 'active' : ''}" onclick="loadScenario(${i})">
+                    ${s.name}
+                </div>
+            `).join('');
+            
+            // Execute initial query to show the problem
+            executeQuery(false);
+            showToast(`Сценарий: ${currentScenario.name}`, 'info');
+        }
+
+        // Execute SQL query
+        function executeQuery(showToastMsg = true) {
+            const query = document.getElementById('sqlEditor').value.trim();
+            if (!query) return;
+            
+            try {
+                const startTime = performance.now();
+                
+                // Handle multiple statements
+                const statements = query.split(';').filter(s => s.trim());
+                let lastResult = null;
+                
+                for (const statement of statements) {
+                    const trimmed = statement.trim();
+                    if (!trimmed) continue;
+                    
+                    if (trimmed.toUpperCase().startsWith('SELECT')) {
+                        lastResult = db.exec(trimmed);
+                    } else {
+                        db.run(trimmed);
+                        lastResult = { message: `Выполнено: ${trimmed.substring(0, 50)}...` };
+                    }
+                }
+                
+                const endTime = performance.now();
+                const executionTime = (endTime - startTime).toFixed(2);
+                
+                // Get EXPLAIN QUERY PLAN
+                const selectStatement = statements.find(s => s.trim().toUpperCase().startsWith('SELECT'));
+                if (selectStatement) {
+                    analyzePerformance(selectStatement.trim());
+                }
+                
+                // Display results
+                displayResults(lastResult);
+                
+                // Add to history
+                addToHistory(query);
+                
+                // Update schema tree (in case of CREATE/DROP INDEX)
+                updateSchemaTree();
+                
+                if (showToastMsg) {
+                    showToast(`Запрос выполнен за ${executionTime} мс`, 'success');
+                }
+                
+                updateStatus('success', 'Выполнено');
+                
+            } catch (error) {
+                displayError(error.message);
+                updateStatus('error', 'Ошибка');
+                if (showToastMsg) {
+                    showToast(`Ошибка: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        // Analyze query performance
+        function analyzePerformance(query) {
+            try {
+                const explainResult = db.exec(`EXPLAIN QUERY PLAN ${query}`);
+                
+                if (!explainResult || !explainResult[0] || !explainResult[0].values) {
+                    return;
+                }
+                
+                const planRows = explainResult[0].values;
+                originalPlan = originalPlan || planRows; // Store first plan for comparison
+                
+                // Parse plan and calculate metrics
+                let totalCost = 0;
+                let totalRows = 0;
+                let usesIndex = false;
+                const nodes = [];
+                
+                planRows.forEach((row, index) => {
+                    const detail = row[3] || '';
+                    const cost = estimateCost(detail);
+                    const estimatedRows = estimateRows(detail);
+                    
+                    totalCost += cost;
+                    totalRows += estimatedRows;
+                    
+                    if (detail.includes('USING INDEX') || detail.includes('SEARCH')) {
+                        usesIndex = true;
+                    }
+                    
+                    nodes.push({
+                        id: row[0],
+                        operation: getOperationName(detail),
+                        detail: detail,
+                        cost: cost,
+                        rows: estimatedRows,
+                        level: row[1] || 0
+                    });
+                });
+                
+                // Calculate virtual time (rough estimate)
+                const virtualTime = Math.round(totalCost * 0.35);
+                
+                // Update metrics display
+                updateMetrics(totalCost, totalRows, virtualTime, usesIndex);
+                
+                // Render plan tree
+                renderPlanTree(nodes);
+                
+                // Update heat map
+                updateHeatMap(totalCost);
+                
+            } catch (error) {
+                console.error('Performance analysis failed:', error);
+            }
+        }
+
+        // Estimate cost from plan detail
+        function estimateCost(detail) {
+            if (detail.includes('SCAN TABLE')) return 1000;
+            if (detail.includes('SEARCH')) return 50;
+            if (detail.includes('USING INDEX')) return 20;
+            if (detail.includes('TEMP B-TREE')) return 500;
+            if (detail.includes('SORT')) return 200;
+            return 100;
+        }
+
+        // Estimate rows from plan detail
+        function estimateRows(detail) {
+            const match = detail.match(/(\d+) rows/);
+            if (match) return parseInt(match[1]);
+            
+            if (detail.includes('SCAN TABLE')) return 500000;
+            if (detail.includes('SEARCH')) return 1000;
+            return 10000;
+        }
+
+        // Get operation name from detail
+        function getOperationName(detail) {
+            if (detail.includes('SCAN TABLE')) return 'SCAN TABLE';
+            if (detail.includes('SEARCH')) return 'SEARCH';
+            if (detail.includes('USING INDEX')) return 'USING INDEX';
+            if (detail.includes('TEMP B-TREE')) return 'TEMP B-TREE';
+            if (detail.includes('SORT')) return 'SORT';
+            return detail.split(' ')[0];
+        }
+
+        // Update metrics display
+        function updateMetrics(cost, rows, time, usesIndex) {
+            const costEl = document.getElementById('metricCost');
+            const rowsEl = document.getElementById('metricRows');
+            const timeEl = document.getElementById('metricTime');
+            const indexEl = document.getElementById('metricIndexes');
+            
+            costEl.textContent = cost.toLocaleString();
+            costEl.className = 'metric-value ' + (cost < 100 ? 'good' : cost < 500 ? 'warning' : 'bad');
+            
+            rowsEl.textContent = rows.toLocaleString();
+            rowsEl.className = 'metric-value ' + (rows < 1000 ? 'good' : rows < 10000 ? 'warning' : 'bad');
+            
+            timeEl.textContent = `~${time} мс`;
+            timeEl.className = 'metric-value ' + (time < 50 ? 'good' : time < 200 ? 'warning' : 'bad');
+            
+            indexEl.textContent = usesIndex ? '✓ Да' : '✗ Нет';
+            indexEl.className = 'metric-value ' + (usesIndex ? 'good' : 'bad');
+        }
+
+        // Render plan tree visualization
+        function renderPlanTree(nodes) {
+            const container = document.getElementById('planTree');
+            
+            if (nodes.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-secondary);">Нет данных плана выполнения</div>';
+                return;
+            }
+            
+            container.innerHTML = nodes.map((node, index) => {
+                const severity = node.cost < 100 ? 'good' : node.cost < 500 ? 'warning' : 'bad';
+                const indent = node.level * 20;
+                
+                return `
+                    <div class="plan-node ${severity}" style="margin-left: ${indent}px;" 
+                         title="${node.detail}\nОценочное число строк: ${node.rows}\n${getOptimizationTip(node.detail)}">
+                        <div class="plan-node-operation">${node.operation}</div>
+                        <div class="plan-node-detail">${truncateString(node.detail, 80)}</div>
+                        <div class="plan-node-cost">cost: ${node.cost}</div>
+                    </div>
+                    ${index < nodes.length - 1 && nodes[index + 1].level > node.level ? '<div class="plan-connector"></div>' : ''}
+                `;
+            }).join('');
+        }
+
+        // Get optimization tip based on plan detail
+        function getOptimizationTip(detail) {
+            if (detail.includes('SCAN TABLE')) {
+                return 'Полное сканирование таблицы — рассмотрите создание индекса';
+            }
+            if (detail.includes('TEMP B-TREE')) {
+                return 'Используется временная сортировка — может быть медленно для больших данных';
+            }
+            return '';
+        }
+
+        // Update heat map
+        function updateHeatMap(cost) {
+            const marker = document.getElementById('heatMarker');
+            const maxCost = 2000; // Reference max cost
+            const percentage = Math.min((cost / maxCost) * 100, 100);
+            marker.style.left = `${percentage}%`;
+        }
+
+        // Display query results
+        function displayResults(result) {
+            const resultsTab = document.getElementById('resultsTab');
+            
+            if (!result || (Array.isArray(result) && result.length === 0)) {
+                resultsTab.innerHTML = '<div style="color: var(--text-secondary);">Нет результатов</div>';
+                return;
+            }
+            
+            if (result.columns && result.values) {
+                let html = '<table class="results-table"><thead><tr>';
+                result.columns.forEach(col => {
+                    html += `<th>${col}</th>`;
+                });
+                html += '</tr></thead><tbody>';
+                
+                // Virtualize: show only first 100 rows
+                const displayRows = result.values.slice(0, 100);
+                displayRows.forEach(row => {
+                    html += '<tr>';
+                    row.forEach(cell => {
+                        html += `<td>${cell !== null ? cell : 'NULL'}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                
+                html += '</tbody></table>';
+                if (result.values.length > 100) {
+                    html += `<div style="color: var(--text-secondary); margin-top: 10px;">Показано 100 из ${result.values.length} строк</div>`;
+                }
+                
+                resultsTab.innerHTML = html;
+            } else if (result.message) {
+                resultsTab.innerHTML = `<div class="message-success">${result.message}</div>`;
+            }
+        }
+
+        // Display error message
+        function displayError(message) {
+            const messagesTab = document.getElementById('messagesTab');
+            messagesTab.innerHTML = `<div class="message-error">❌ ${escapeHtml(message)}</div>`;
+            switchTab('messages');
+        }
+
+        // Add query to history
+        function addToHistory(query) {
+            if (!queryHistory.includes(query)) {
+                queryHistory.unshift(query);
+                if (queryHistory.length > 20) queryHistory.pop();
+                updateHistorySelect();
+            }
+        }
+
+        // Update history dropdown
+        function updateHistorySelect() {
+            const select = document.getElementById('historySelect');
+            select.innerHTML = '<option value="">История запросов...</option>' +
+                queryHistory.map((q, i) => `<option value="${i}">${truncateString(q, 50)}</option>`).join('');
+        }
+
+        // Load query from history
+        function loadFromHistory() {
+            const select = document.getElementById('historySelect');
+            if (select.value !== '') {
+                const index = parseInt(select.value);
+                document.getElementById('sqlEditor').value = queryHistory[index];
+                select.value = '';
+            }
+        }
+
+        // Switch tabs
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+            
+            event.target.classList.add('active');
+            document.getElementById(`${tabName}Tab`).style.display = 'block';
+        }
+
+        // Update schema tree
+        function updateSchemaTree() {
+            const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+            
+            if (!tables[0]) return;
+            
+            let html = '';
+            tables[0].values.forEach(([tableName]) => {
+                const columns = db.exec(`PRAGMA table_info(${tableName})`);
+                const indexes = db.exec(`SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='${tableName}' AND name NOT LIKE 'sqlite_%'`);
+                const rowCount = db.exec(`SELECT COUNT(*) FROM ${tableName}`);
+                
+                html += `
+                    <div class="schema-item">
+                        <div class="table-name">📋 ${tableName} <span class="row-count">(${rowCount[0]?.values[0][0] || 0})</span></div>
+                        <div class="column-list">
+                            ${columns[0]?.values.map(col => `
+                                <div class="column-item">
+                                    ${col[1]} <span class="column-type">${col[2]}</span>
+                                    ${col[5] ? '<span class="pk-badge">PK</span>' : ''}
+                                </div>
+                            `).join('') || ''}
+                        </div>
+                        ${indexes[0]?.values.map(idx => `
+                            <div class="index-list">
+                                <div class="index-item">
+                                    <span class="index-icon">🔖</span> ${idx[0]}
+                                </div>
+                            </div>
+                        `).join('') || ''}
+                    </div>
+                `;
+            });
+            
+            document.getElementById('schemaTree').innerHTML = html;
+        }
+
+        // Show hint modal
+        function showHint() {
+            if (!currentScenario) return;
+            
+            const content = document.getElementById('hintContent');
+            content.innerHTML = currentScenario.hints.map((hint, i) => `
+                <div class="hint-step">
+                    <strong>Шаг ${i + 1}:</strong> ${hint}
+                </div>
+            `).join('');
+            
+            document.getElementById('hintModal').classList.add('active');
+        }
+
+        // Check solution
+        function checkSolution() {
+            if (!currentScenario) return;
+            
+            const query = document.getElementById('sqlEditor').value.trim().toUpperCase();
+            const hasCreateIndex = query.includes('CREATE INDEX');
+            
+            // Re-execute to get fresh metrics
+            try {
+                db.exec("EXPLAIN QUERY PLAN " + currentScenario.initialQuery);
+                const currentPlan = db.exec("EXPLAIN QUERY PLAN " + currentScenario.initialQuery);
+                
+                if (currentPlan[0] && originalPlan) {
+                    const currentCost = currentPlan[0].values.reduce((sum, row) => sum + estimateCost(row[3]), 0);
+                    const originalCost = originalPlan.reduce((sum, row) => sum + estimateCost(row[3]), 0);
+                    
+                    const reduction = originalCost / currentCost;
+                    
+                    if (reduction >= currentScenario.successThreshold.costReduction) {
+                        updateStatus('success', `Ускорено в ${reduction.toFixed(1)} раз!`);
+                        showToast(`🎉 Отлично! Запрос ускорен в ${reduction.toFixed(1)} раз!`, 'success');
+                        
+                        // Mark scenario as completed
+                        const cardIndex = scenarios.findIndex(s => s.id === currentScenario.id);
+                        document.querySelectorAll('.scenario-card')[cardIndex]?.classList.add('completed');
+                    } else {
+                        showToast(`Попробуйте ещё. Текущее ускорение: ${reduction.toFixed(1)}x (требуется ${currentScenario.successThreshold.costReduction}x)`, 'info');
+                    }
+                }
+            } catch (error) {
+                showToast('Ошибка проверки: ' + error.message, 'error');
+            }
+        }
+
+        // Update status indicator
+        function updateStatus(type, text) {
+            const dot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            dot.className = 'status-dot ' + type;
+            statusText.textContent = text;
+        }
+
+        // Close modal
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        // Show toast notification
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+            
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        // Utility functions
+        function truncateString(str, length) {
+            return str.length > length ? str.substring(0, length) + '...' : str;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function toggleSchema() {
+            const panel = document.querySelector('.schema-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                executeQuery();
+            }
+        });
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
