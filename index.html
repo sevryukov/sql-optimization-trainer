@@ -166,6 +166,11 @@
             border-right: 1px solid var(--border-color);
             overflow-y: auto;
             padding: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .schema-panel.collapsed {
+            display: none;
         }
 
         .panel-header {
@@ -802,7 +807,9 @@
                     'Проверьте, есть ли индекс на поле order_date в таблице orders',
                     'Создайте индекс: CREATE INDEX idx_orders_date ON orders(order_date);'
                 ],
-                successThreshold: { costReduction: 10, rowsReduction: 100 }
+                successThreshold: { costReduction: 10, rowsReduction: 100 },
+                baselineCost: null,
+                currentCost: null
             },
             {
                 id: 2,
@@ -815,7 +822,9 @@
                     'В таблице customers более 50,000 записей',
                     'Создайте индекс на поле customer_name'
                 ],
-                successThreshold: { costReduction: 50, rowsReduction: 1000 }
+                successThreshold: { costReduction: 50, rowsReduction: 1000 },
+                baselineCost: null,
+                currentCost: null
             },
             {
                 id: 3,
@@ -828,7 +837,9 @@
                     'Проверьте индексы на полях customer_id в orders и order_id в order_items',
                     'Оптимально создать индекс на orders(customer_id)'
                 ],
-                successThreshold: { costReduction: 20, rowsReduction: 500 }
+                successThreshold: { costReduction: 20, rowsReduction: 500 },
+                baselineCost: null,
+                currentCost: null
             },
             {
                 id: 4,
@@ -841,7 +852,9 @@
                     'Отдельные индексы не так эффективны как составной',
                     'Создайте составной индекс: CREATE INDEX idx_orders_status_date ON orders(status, order_date);'
                 ],
-                successThreshold: { costReduction: 15, rowsReduction: 200 }
+                successThreshold: { costReduction: 15, rowsReduction: 200 },
+                baselineCost: null,
+                currentCost: null
             }
         ];
 
@@ -921,9 +934,9 @@
 
         // Generate realistic sample data
         function generateSampleData() {
-            // Insert customers
+            // Insert customers (reduced from 50,000 to 5,000)
             const cities = ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань'];
-            for (let i = 1; i <= 50000; i++) {
+            for (let i = 1; i <= 5000; i++) {
                 const name = `Customer ${i}`;
                 const email = `customer${i}@example.com`;
                 const phone = `+7-${Math.floor(Math.random() * 900 + 100)}-${Math.floor(Math.random() * 900 + 100)}-${Math.floor(Math.random() * 9000 + 1000)}`;
@@ -934,7 +947,7 @@
 
             // Insert products
             const categories = ['Электроника', 'Одежда', 'Книги', 'Дом и сад', 'Спорт'];
-            for (let i = 1; i <= 1000; i++) {
+            for (let i = 1; i <= 500; i++) {
                 const name = `Product ${i}`;
                 const category = categories[Math.floor(Math.random() * categories.length)];
                 const price = (Math.random() * 10000 + 100).toFixed(2);
@@ -943,10 +956,10 @@
                     [name, category, price, stock]);
             }
 
-            // Insert orders
+            // Insert orders (reduced from 500,000 to 50,000)
             const statuses = ['pending', 'processing', 'completed', 'cancelled'];
-            for (let i = 1; i <= 500000; i++) {
-                const customerId = Math.floor(Math.random() * 50000) + 1;
+            for (let i = 1; i <= 50000; i++) {
+                const customerId = Math.floor(Math.random() * 5000) + 1;
                 const year = 2024 + Math.floor(Math.random() * 2);
                 const month = Math.floor(Math.random() * 12) + 1;
                 const day = Math.floor(Math.random() * 28) + 1;
@@ -957,10 +970,10 @@
                     [customerId, orderDate, status, total]);
             }
 
-            // Insert order items
-            for (let i = 1; i <= 1500000; i++) {
-                const orderId = Math.floor(Math.random() * 500000) + 1;
-                const productId = Math.floor(Math.random() * 1000) + 1;
+            // Insert order items (reduced from 1,500,000 to 150,000)
+            for (let i = 1; i <= 150000; i++) {
+                const orderId = Math.floor(Math.random() * 50000) + 1;
+                const productId = Math.floor(Math.random() * 500) + 1;
                 const quantity = Math.floor(Math.random() * 10) + 1;
                 const price = (Math.random() * 10000 + 100).toFixed(2);
                 if (i % 1000 === 0) db.exec("BEGIN");
@@ -1007,6 +1020,11 @@
                     ${s.name}
                 </div>
             `).join('');
+            
+            // Reset baseline cost for this scenario
+            currentScenario.baselineCost = null;
+            currentScenario.currentCost = null;
+            originalPlan = null;
             
             // Execute initial query to show the problem
             executeQuery(false);
@@ -1080,10 +1098,22 @@
                 }
                 
                 const planRows = explainResult[0].values;
-                originalPlan = originalPlan || planRows; // Store first plan for comparison
+                
+                // Calculate current cost
+                const currentCost = planRows.reduce((sum, row) => sum + estimateCost(row[3]), 0);
+                
+                // Store baseline cost on first run for this scenario
+                if (currentScenario && currentScenario.baselineCost === null) {
+                    currentScenario.baselineCost = currentCost;
+                    originalPlan = planRows;
+                }
+                
+                // Update current cost
+                if (currentScenario) {
+                    currentScenario.currentCost = currentCost;
+                }
                 
                 // Parse plan and calculate metrics
-                let totalCost = 0;
                 let totalRows = 0;
                 let usesIndex = false;
                 const nodes = [];
@@ -1093,7 +1123,6 @@
                     const cost = estimateCost(detail);
                     const estimatedRows = estimateRows(detail);
                     
-                    totalCost += cost;
                     totalRows += estimatedRows;
                     
                     if (detail.includes('USING INDEX') || detail.includes('SEARCH')) {
@@ -1111,16 +1140,16 @@
                 });
                 
                 // Calculate virtual time (rough estimate)
-                const virtualTime = Math.round(totalCost * 0.35);
+                const virtualTime = Math.round(currentCost * 0.35);
                 
                 // Update metrics display
-                updateMetrics(totalCost, totalRows, virtualTime, usesIndex);
+                updateMetrics(currentCost, totalRows, virtualTime, usesIndex);
                 
                 // Render plan tree
                 renderPlanTree(nodes);
                 
                 // Update heat map
-                updateHeatMap(totalCost);
+                updateHeatMap(currentCost);
                 
             } catch (error) {
                 console.error('Performance analysis failed:', error);
@@ -1130,6 +1159,7 @@
         // Estimate cost from plan detail
         function estimateCost(detail) {
             if (detail.includes('SCAN TABLE')) return 1000;
+            if (detail.includes('SEARCH') && detail.includes('USING INDEX')) return 20;
             if (detail.includes('SEARCH')) return 50;
             if (detail.includes('USING INDEX')) return 20;
             if (detail.includes('TEMP B-TREE')) return 500;
@@ -1142,9 +1172,10 @@
             const match = detail.match(/(\d+) rows/);
             if (match) return parseInt(match[1]);
             
-            if (detail.includes('SCAN TABLE')) return 500000;
-            if (detail.includes('SEARCH')) return 1000;
-            return 10000;
+            // Adjusted for reduced data size (50,000 orders instead of 500,000)
+            if (detail.includes('SCAN TABLE')) return 50000;
+            if (detail.includes('SEARCH')) return 500;
+            return 5000;
         }
 
         // Get operation name from detail
@@ -1216,9 +1247,13 @@
         // Update heat map
         function updateHeatMap(cost) {
             const marker = document.getElementById('heatMarker');
-            const maxCost = 2000; // Reference max cost
-            const percentage = Math.min((cost / maxCost) * 100, 100);
+            // Use baseline cost as reference if available, otherwise use fixed max
+            const referenceCost = currentScenario?.baselineCost || 2000;
+            const percentage = Math.min((cost / referenceCost) * 100, 100);
             marker.style.left = `${percentage}%`;
+            
+            // Store current cost for status check
+            window.currentQueryCost = cost;
         }
 
         // Display query results
@@ -1358,14 +1393,17 @@
             const query = document.getElementById('sqlEditor').value.trim().toUpperCase();
             const hasCreateIndex = query.includes('CREATE INDEX');
             
+            // Reset status before checking
+            updateStatus('info', 'Проверка...');
+            
             // Re-execute to get fresh metrics
             try {
                 db.exec("EXPLAIN QUERY PLAN " + currentScenario.initialQuery);
                 const currentPlan = db.exec("EXPLAIN QUERY PLAN " + currentScenario.initialQuery);
                 
-                if (currentPlan[0] && originalPlan) {
+                if (currentPlan[0] && currentScenario.baselineCost !== null) {
                     const currentCost = currentPlan[0].values.reduce((sum, row) => sum + estimateCost(row[3]), 0);
-                    const originalCost = originalPlan.reduce((sum, row) => sum + estimateCost(row[3]), 0);
+                    const originalCost = currentScenario.baselineCost;
                     
                     const reduction = originalCost / currentCost;
                     
@@ -1377,8 +1415,11 @@
                         const cardIndex = scenarios.findIndex(s => s.id === currentScenario.id);
                         document.querySelectorAll('.scenario-card')[cardIndex]?.classList.add('completed');
                     } else {
+                        updateStatus('info', 'Требуется оптимизация');
                         showToast(`Попробуйте ещё. Текущее ускорение: ${reduction.toFixed(1)}x (требуется ${currentScenario.successThreshold.costReduction}x)`, 'info');
                     }
+                } else {
+                    updateStatus('info', 'Выполните запрос для проверки');
                 }
             } catch (error) {
                 showToast('Ошибка проверки: ' + error.message, 'error');
@@ -1423,7 +1464,7 @@
 
         function toggleSchema() {
             const panel = document.querySelector('.schema-panel');
-            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            panel.classList.toggle('collapsed');
         }
 
         // Keyboard shortcuts
